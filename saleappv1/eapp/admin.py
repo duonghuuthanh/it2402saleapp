@@ -1,14 +1,31 @@
 from flask_admin.contrib.sqla import ModelView
 from flask_admin import BaseView, expose
 from wtforms.fields.numeric import FloatField
+from eapp import app, db, dao
+from flask_admin import Admin, AdminIndexView
+from eapp.models import Category, Product, UserRoleEnum
+from flask_login import logout_user, current_user
+from flask import redirect
 
-from eapp import app, db
-from flask_admin import Admin
-from eapp.models import Category, Product
 
-admin = Admin(app=app, name="E-commerce'Admin")
+class MyAdminIndexView(AdminIndexView):
+    @expose('/')
+    def index(self):
+        return self.render('admin/index.html', stats=dao.count_products_by_category())
 
-class ProductView(ModelView):
+
+admin = Admin(app=app, name="E-commerce'Admin", index_view=MyAdminIndexView())
+
+class AdminView(ModelView):
+    def is_accessible(self) -> bool:
+        return current_user.is_authenticated and current_user.user_role == UserRoleEnum.ADMIN
+
+
+class AuthenticatedBaseView(BaseView):
+    def is_accessible(self) -> bool:
+        return current_user.is_authenticated and current_user.user_role == UserRoleEnum.ADMIN
+
+class ProductView(AdminView):
     column_list = ['id', 'name', 'price', 'category_id']
     column_searchable_list = ['name']
     can_export = True
@@ -19,12 +36,21 @@ class ProductView(ModelView):
         'price': FloatField
     }
 
-class StatsView(BaseView):
+
+class StatsView(AuthenticatedBaseView):
     @expose('/')
     def index(self):
         return self.render('admin/stats.html')
 
 
-admin.add_view(ModelView(Category, db.session))
+class LogoutView(AuthenticatedBaseView):
+    @expose('/')
+    def index(self):
+        logout_user()
+        return redirect('/admin')
+
+
+admin.add_view(AdminView(Category, db.session))
 admin.add_view(ProductView(Product, db.session))
 admin.add_view(StatsView(name='Thống kê'))
+admin.add_view(LogoutView(name='Đăng xuất'))
